@@ -1,0 +1,199 @@
+@page "/runs/{Id:int}"
+@using Microsoft.EntityFrameworkCore
+@using Reconciliation.Data
+@using Reconciliation.Domain.Entities
+@using Reconciliation.Domain.Matching
+@rendermode InteractiveServer
+@inject IDbContextFactory<ReconciliationDbContext> DbFactory
+
+<PageTitle>Run Details</PageTitle>
+
+@if (!loaded)
+{
+    <p>Loading...</p>
+}
+else if (run is null || matches is null)
+{
+    <p>Run not found.</p>
+    <a href="runs">Back to runs</a>
+}
+else
+{
+    <h2>Run #@run.Id</h2>
+    <p>Created @run.CreatedUtc.ToString("yyyy-MM-dd HH:mm") UTC</p>
+    <p>Bank file: @run.BankFileName | Ledger file: @run.LedgerFileName</p>
+
+    <p>
+        @matches.Count(m => m.Kind == MatchKind.ExactAmountAndDate) exact,
+        @matches.Count(m => m.Kind == MatchKind.FuzzyDescription) fuzzy,
+        @matches.Count(m => m.Kind == MatchKind.PossibleDuplicate) possible duplicates
+    </p>
+
+    <label>
+        Filter
+        <select @bind="kindFilter">
+            <option value="">All</option>
+            <option value="@MatchKind.ExactAmountAndDate">Exact Match</option>
+            <option value="@MatchKind.FuzzyDescription">Fuzzy Match</option>
+            <option value="@MatchKind.PossibleDuplicate">Possible Duplicate</option>
+        </select>
+    </label>
+
+    @if (error is not null)
+    {
+        <p>@error</p>
+    }
+
+    <table>
+        <tr>
+            <th>Kind</th>
+            <th>Left</th>
+            <th>Right</th>
+            <th>Amount</th>
+            <th>Confidence</th>
+            <th>Review</th>
+        </tr>
+        @foreach (var m in matches.Where(x => kindFilter == null || x.Kind == kindFilter))
+        {
+            <tr>
+                <td>@m.Kind</td>
+                <td>@m.LeftTransaction?.Date.ToString("yyyy-MM-dd") @m.LeftTransaction?.Description</td>
+                <td>@m.RightTransaction?.Date.ToString("yyyy-MM-dd") @m.RightTransaction?.Description</td>
+                <td>@(m.LeftTransaction is null ? "" : Money.Format(m.LeftTransaction.Amount))</td>
+                <td>@m.Confidence.ToString("0.00")</td>
+                <td>
+                    @if (m.Decision is null)
+                    {
+                        <button @onclick="() => ReviewAsync(m, ReviewOutcome.Approved)">Approve</button>
+                        <button @onclick="() => ReviewAsync(m, ReviewOutcome.Rejected)">Reject</button>
+                    }
+                    else
+                    {
+                        <span>@m.Decision.Outcome</span>
+                    }
+                </td>
+            </tr>
+        }
+    </table>
+
+    <h3>Unmatched bank rows</h3>
+    @if (unmatchedBank is null || unmatchedBank.Count == 0)
+    {
+        <p>None</p>
+    }
+    else
+    {
+        <table>
+            <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Description</th>
+            </tr>
+            @foreach (var t in unmatchedBank)
+            {
+                <tr>
+                    <td>@t.Date.ToString("yyyy-MM-dd")</td>
+                    <td>@Money.Format(t.Amount)</td>
+                    <td>@t.Description</td>
+                </tr>
+            }
+        </table>
+    }
+
+    <h3>Unmatched ledger rows</h3>
+    @if (unmatchedLedger is null || unmatchedLedger.Count == 0)
+    {
+        <p>None</p>
+    }
+    else
+    {
+        <table>
+            <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Description</th>
+            </tr>
+            @foreach (var t in unmatchedLedger)
+            {
+                <tr>
+                    <td>@t.Date.ToString("yyyy-MM-dd")</td>
+                    <td>@Money.Format(t.Amount)</td>
+                    <td>@t.Description</td>
+                </tr>
+            }
+        </table>
+    }
+    <a href="runs">Back to runs</a>
+}
+
+@code
+{
+    [Parameter] public int Id { get; set; }
+    private ReconciliationRun? run;
+    private List<Match>? matches;
+    private bool loaded;
+    private MatchKind? kindFilter;
+    private string? error;
+    private List<Transaction>? unmatchedBank;
+    private List<Transaction>? unmatchedLedger;
+
+    private async Task ReviewAsync(Match match, ReviewOutcome outcome)
+    {
+        error = null;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var decision = new ReviewDecision
+            {
+                MatchId = match.Id,
+                Outcome = outcome,
+                DecidedAtUtc = DateTime.UtcNow,
+            };
+
+            db.ReviewDecisions.Add(decision);
+            await db.SaveChangesAsync();
+            match.Decision = decision;
+        }
+        catch (DbUpdateException)
+        {
+            error = "Could not save the decision. It may already have been reviewed.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        run = await db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == Id);
+
+        if (run != null)
+        {
+            matches = await db.Matches.AsNoTracking()
+            .Include(m => m.LeftTransaction)
+            .Include(m => m.RightTransaction)
+            .Include(m => m.Decision)
+            .Where(m => m.LeftTransaction!.RunId == Id)
+            .OrderBy(m => m.Id)
+            .ToListAsync();
+
+            var transactions = await db.Transactions.AsNoTracking()
+                .Where(t => t.RunId == Id)
+                .OrderBy(t => t.Date)
+                .ThenBy(t => t.Id)
+                .ToListAsync();
+
+            var matchedIds = matches
+                .Where(m => m.Kind != MatchKind.PossibleDuplicate)
+                .SelectMany(m => new[] { m.LeftTransactionId, m.RightTransactionId })
+                .ToHashSet();
+
+            unmatchedBank = transactions
+                .Where(t => t.Source == TransactionSource.Bank && !matchedIds.Contains(t.Id))
+                .ToList();
+            unmatchedLedger = transactions
+                .Where(t => t.Source == TransactionSource.Ledger && !matchedIds.Contains(t.Id))
+                .ToList();
+        }
+        loaded = true;
+    }
+}

@@ -1,0 +1,206 @@
+@page "/import"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using Reconciliation.Domain.Entities
+@using Reconciliation.Domain.Import
+@using Reconciliation.Domain.Matching
+@using Reconciliation.Data
+@inject IDbContextFactory<ReconciliationDbContext> DbFactory
+
+<PageTitle>Import</PageTitle>
+
+<div>
+    <label>
+        Bank CSV
+        <InputFile OnChange="OnBankSelected" />
+    </label>
+</div>
+
+<div>
+    <label>
+        Ledger CSV
+        <InputFile OnChange="OnLedgerSelected" />
+    </label>
+</div>
+
+<button disabled="@(bankFile is null || ledgerFile is null)" @onclick="OnImportClicked">Import</button>
+<button disabled="@(isSaving || bankResult is null || ledgerResult is null || bankResult.Errors.Count > 0 || ledgerResult.Errors.Count > 0)" @onclick="OnReconciliateClicked">Reconciliate</button>
+@if (bankResult is not null)
+{
+    <h3>Bank</h3>
+    <p>Read @bankResult.Transactions.Count rows</p>
+
+    if (bankResult.Errors.Count > 0)
+    {
+        <table>
+            <tr>
+                <th>Line Number</th>
+                <th>Error Message</th>
+            </tr>
+            @foreach(var error in bankResult.Errors)
+            {
+                <tr>
+                    <td>@error.LineNumber</td>
+                    <td>@error.Message</td>
+                </tr>
+            }
+        </table>
+    }
+}
+
+@if (ledgerResult is not null)
+{
+    <h3>Ledger</h3>
+    <p>Read @ledgerResult.Transactions.Count rows</p>
+
+    if (ledgerResult.Errors.Count > 0)
+    {
+        <table>
+            <tr>
+                <th>Line Number</th>
+                <th>Error Message</th>
+            </tr>
+            @foreach(var error in ledgerResult.Errors)
+            {
+                <tr>
+                    <td>@error.LineNumber</td>
+                    <td>@error.Message</td>
+                </tr>
+            }
+        </table>
+    }
+}
+
+@if (readError is not null)
+{
+    <p>@readError</p>
+}
+
+@if (summary is not null)
+{
+    <p>@summary</p>
+}
+
+@code
+{
+    IBrowserFile? bankFile;
+    IBrowserFile? ledgerFile;
+    CsvParseResult? bankResult;
+    CsvParseResult? ledgerResult;
+    string? readError;
+    string? summary;
+    bool isSaving;
+    private const long MaxFileSizeBytes = 1024 * 1024;
+
+    private void OnBankSelected(InputFileChangeEventArgs e)
+    {
+        bankFile = e.File;
+        readError = null;
+        bankResult = null;
+        ledgerResult = null;
+        summary = null;
+    }
+
+    private void OnLedgerSelected(InputFileChangeEventArgs e)
+    {
+        ledgerFile = e.File;
+        readError = null;
+        bankResult = null;
+        ledgerResult = null;
+        summary = null;
+    }
+
+    private static async Task<string> ReadTextAsync(IBrowserFile file)
+    {
+        using var stream = file.OpenReadStream(MaxFileSizeBytes);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
+    }
+
+    private async Task OnImportClicked()
+    {
+        readError = null;
+        bankResult = null;
+        ledgerResult = null;
+        summary = null;
+
+        if (bankFile == null || ledgerFile == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var bankText   = await ReadTextAsync(bankFile);
+            var ledgerText = await ReadTextAsync(ledgerFile);
+            bankResult   = TransactionCsvParser.Parse(bankText, TransactionSource.Bank);
+            ledgerResult = TransactionCsvParser.Parse(ledgerText, TransactionSource.Ledger);
+        }
+        catch (IOException)
+        {
+            readError = "A file is larger than 1 MB.";
+        }
+    }
+
+    private async Task OnReconciliateClicked()
+    {
+
+        if (bankFile == null || ledgerFile == null || bankResult == null || ledgerResult == null)
+        {
+            return;
+        }
+
+        isSaving = true;
+        summary = null;
+        readError = null;
+
+        try
+        {
+            var reconciliationRun = new ReconciliationRun
+            {
+                CreatedUtc = DateTime.UtcNow,
+                BankFileName = bankFile.Name,
+                LedgerFileName = ledgerFile.Name,
+            };
+
+            foreach (var tx in bankResult.Transactions)
+            {
+                tx.Run = reconciliationRun;
+            }
+
+            foreach (var tx in ledgerResult.Transactions)
+            {
+                tx.Run = reconciliationRun;
+            }
+
+            var result = MatchingEngine.Run(bankResult.Transactions, ledgerResult.Transactions);
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+
+            db.Transactions.AddRange(bankResult.Transactions);
+            db.Transactions.AddRange(ledgerResult.Transactions);
+            db.Matches.AddRange(result.Matches);
+            await db.SaveChangesAsync();
+
+            var numberOfExactMatches = result.Matches.Count(m => m.Kind == MatchKind.ExactAmountAndDate);
+            var numberOfFuzzyMatches = result.Matches.Count(m => m.Kind == MatchKind.FuzzyDescription);
+            var numberOfDuplicateMatches = result.Matches.Count(m => m.Kind == MatchKind.PossibleDuplicate);
+
+            summary = $"Run #{reconciliationRun.Id} saved, {numberOfExactMatches} exact, {numberOfFuzzyMatches} fuzzy, {numberOfDuplicateMatches} possible duplicates, {result.UnmatchedBank.Count} unmatched bank rows, {result.UnmatchedLedger.Count} unmatched ledger rows.";
+
+            bankResult = null;
+            ledgerResult = null;
+        }
+        catch (DbUpdateException)
+        {
+            readError = "Could not save the run to the database.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+
+
+    }
+}

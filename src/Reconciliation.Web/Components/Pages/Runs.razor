@@ -1,0 +1,48 @@
+@page "/runs"
+@using Microsoft.EntityFrameworkCore
+@using Reconciliation.Data
+@using Reconciliation.Domain.Entities
+@rendermode InteractiveServer
+@inject IDbContextFactory<ReconciliationDbContext> DbFactory
+
+<PageTitle>Runs</PageTitle>
+
+@if (runs is null)
+{
+    <p>Loading...</p>
+}
+else if (runs.Count == 0)
+{
+    <p>No runs yet.</p>
+}
+else
+{
+    <table>
+        <tr>
+            <th>Run</th>
+            <th>Created (UTC)</th>
+            <th>Bank File</th>
+            <th>Ledger File</th>
+        </tr>
+        @foreach(var run in runs)
+        {
+            <tr>
+                <td><a href="runs/@run.Id">#@run.Id</a></td>
+                <td>@run.CreatedUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                <td>@run.BankFileName</td>
+                <td>@run.LedgerFileName</td>
+            </tr>
+        }
+    </table>
+}
+
+@code
+{
+    private List<ReconciliationRun>? runs;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        runs = await db.Runs.AsNoTracking().OrderByDescending(r => r.CreatedUtc).ToListAsync();
+    }
+}

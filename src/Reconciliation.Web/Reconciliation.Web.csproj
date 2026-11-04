@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Reconciliation.Data\Reconciliation.Data.csproj" />
+    <ProjectReference Include="..\Reconciliation.Domain\Reconciliation.Domain.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <UserSecretsId>24b282f7-aaed-4281-9f1c-08d7f5277d1c</UserSecretsId>
+  </PropertyGroup>
+
+</Project>

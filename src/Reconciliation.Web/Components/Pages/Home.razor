@@ -1,0 +1,28 @@
+﻿@page "/"
+@using Microsoft.EntityFrameworkCore
+@using Reconciliation.Data
+@inject IDbContextFactory<ReconciliationDbContext> DbFactory
+
+<PageTitle>Home</PageTitle>
+
+<h1>Bank Reconciliation</h1>
+
+@if (transactionCount is null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <p>Transactions in database: @transactionCount</p>
+}
+
+@code
+{
+    private int? transactionCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        transactionCount = await db.Transactions.CountAsync();
+    }
+}
