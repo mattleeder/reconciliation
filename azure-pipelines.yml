@@ -54,3 +54,29 @@ jobs:
         displayName: Run tests
         env:
           RECONCILIATION_CONNECTION: Server=localhost,1433;Database=Reconciliation;User ID=sa;Password=$(SqlPassword);TrustServerCertificate=True
+      - script: dotnet publish src/Reconciliation.Web -c Release -o $(Build.ArtifactStagingDirectory)/web
+        displayName: Publish Reconciliation.Web
+      - script: dotnet publish src/Reconciliation.Worker -c Release -o $(Build.ArtifactStagingDirectory)/worker
+        displayName: Publish Reconciliation.Worker
+      - task: ArchiveFiles@2
+        displayName: Zip Web
+        inputs:
+          rootFolderOrFile: $(Build.ArtifactStagingDirectory)/web
+          includeRootFolder: false
+          archiveType: zip
+          archiveFile: $(Build.ArtifactStagingDirectory)/drop/web.zip
+      - task: ArchiveFiles@2
+        displayName: Zip Worker
+        inputs:
+          rootFolderOrFile: $(Build.ArtifactStagingDirectory)/worker
+          includeRootFolder: false
+          archiveType: zip
+          archiveFile: $(Build.ArtifactStagingDirectory)/drop/worker.zip
+      - script: dotnet tool restore
+        displayName: Restore dotnet tools
+      - script: dotnet ef migrations script --idempotent --project src/Reconciliation.Data --output $(Build.ArtifactStagingDirectory)/drop/migrate.sql
+        env:
+          RECONCILIATION_CONNECTION: Server=unused;Database=unused
+        displayName: Generate migration script
+      - publish: $(Build.ArtifactStagingDirectory)/drop
+        artifact: drop
