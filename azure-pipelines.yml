@@ -50,7 +50,6 @@ jobs:
           echo "SQL did not start in time"
           exit 1
         displayName: Wait for SQL
-        displayName: Wait for SQL
       - script: dotnet test tests/Reconciliation.Tests --no-build
         displayName: Run tests
         env:
