@@ -81,3 +81,19 @@ stages:
             displayName: Generate migration script
           - publish: $(Build.ArtifactStagingDirectory)/drop
             artifact: drop
+
+  - stage: Deploy
+    dependsOn: Build
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+    jobs:
+      - job: Deploy
+        steps:
+          - download: current
+            artifact: drop
+          - task: AzureWebApp@1
+            displayName: Deploy web app
+            inputs:
+              azureSubscription: azure-reconciliation
+              appType: webAppLinux
+              appName: app-recon-mattl
+              package: $(Pipeline.Workspace)/drop/web.zip
