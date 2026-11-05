@@ -20,7 +20,9 @@ else
     <table>
         <tr>
             <th>Run</th>
+            <th>Status</th>
             <th>Created (UTC)</th>
+            <th>Completed (UTC)</th>
             <th>Bank File</th>
             <th>Ledger File</th>
         </tr>
@@ -28,7 +30,9 @@ else
         {
             <tr>
                 <td><a href="runs/@run.Id">#@run.Id</a></td>
+                <td>@run.Status</td>
                 <td>@run.CreatedUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                <td>@(run.CompletedUtc?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
                 <td>@run.BankFileName</td>
                 <td>@run.LedgerFileName</td>
             </tr>

@@ -66,13 +66,27 @@ namespace Reconciliation.Data.Migrations
                         .HasMaxLength(260)
                         .HasColumnType("nvarchar(260)");
 
+                    b.Property<DateTime?>("CompletedUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime>("CreatedUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("LedgerFileName")
                         .IsRequired()
                         .HasMaxLength(260)
                         .HasColumnType("nvarchar(260)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("Complete");
 
                     b.HasKey("Id");
 
@@ -108,6 +122,26 @@ namespace Reconciliation.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("ReviewDecisions");
+                });
+
+            modelBuilder.Entity("Reconciliation.Domain.Entities.RunInput", b =>
+                {
+                    b.Property<int>("RunId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BankCsv")
+                        .IsRequired()
+                        .HasMaxLength(1048576)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("LedgerCsv")
+                        .IsRequired()
+                        .HasMaxLength(1048576)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("RunId");
+
+                    b.ToTable("RunInputs");
                 });
 
             modelBuilder.Entity("Reconciliation.Domain.Entities.Transaction", b =>
@@ -173,6 +207,17 @@ namespace Reconciliation.Data.Migrations
                         .HasForeignKey("Reconciliation.Domain.Entities.ReviewDecision", "MatchId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Reconciliation.Domain.Entities.RunInput", b =>
+                {
+                    b.HasOne("Reconciliation.Domain.Entities.ReconciliationRun", "Run")
+                        .WithOne()
+                        .HasForeignKey("Reconciliation.Domain.Entities.RunInput", "RunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Run");
                 });
 
             modelBuilder.Entity("Reconciliation.Domain.Entities.Transaction", b =>

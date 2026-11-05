@@ -6,6 +6,7 @@ using Reconciliation.Domain.Matching;
 
 namespace Reconciliation.Tests;
 
+[Collection("Database")]
 public class PersistenceTests : IAsyncLifetime
 {
 
@@ -134,5 +135,108 @@ public class PersistenceTests : IAsyncLifetime
         });
 
         await Assert.ThrowsAsync<DbUpdateException>(() => duplicateContext.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task SaveAndLoad_PendingRunWithInput_RoundTrips()
+    {
+        const string bankCsv = "Date,Amount,Description\n2026-01-01,10.00,Shop, with a comma\n";
+        const string ledgerCsv = "Date,Amount,Description\n2026-01-01,10.00,Shop\n";
+        var run = NewRun();
+        run.Status = RunStatus.Pending;
+
+        await using var actContext = CreateDbContext();
+        actContext.RunInputs.Add(new RunInput { Run = run, BankCsv = bankCsv, LedgerCsv = ledgerCsv });
+        await actContext.SaveChangesAsync();
+        var runId = run.Id;
+
+        await using var assertContext = CreateDbContext();
+        var loadedRun = await assertContext.Runs.SingleAsync(r => r.Id == runId);
+        var loadedInput = await assertContext.RunInputs.SingleAsync(i => i.RunId == runId);
+
+        Assert.Equal(RunStatus.Pending, loadedRun.Status);
+        Assert.Null(loadedRun.CompletedUtc);
+        Assert.Null(loadedRun.FailureReason);
+        Assert.Equal(bankCsv, loadedInput.BankCsv);
+        Assert.Equal(ledgerCsv, loadedInput.LedgerCsv);
+    }
+
+    [Fact]
+    public async Task Save_RunWithoutStatus_IsStoredAsComplete()
+    {
+        var run = NewRun();
+
+        await using var actContext = CreateDbContext();
+        actContext.Runs.Add(run);
+        await actContext.SaveChangesAsync();
+        var runId = run.Id;
+
+        await using var assertContext = CreateDbContext();
+        var loaded = await assertContext.Runs.SingleAsync(r => r.Id == runId);
+        Assert.Equal(RunStatus.Complete, loaded.Status);
+    }
+
+    [Fact]
+    public async Task SaveAndLoad_FailedRun_RoundTripsFailureReason()
+    {
+        var run = NewRun();
+        run.Status = RunStatus.Failed;
+        run.CompletedUtc = DateTime.UtcNow;
+        run.FailureReason = "Line 3: bad amount";
+
+        await using var actContext = CreateDbContext();
+        actContext.Runs.Add(run);
+        await actContext.SaveChangesAsync();
+        var runId = run.Id;
+
+        await using var assertContext = CreateDbContext();
+        var loaded = await assertContext.Runs.SingleAsync(r => r.Id == runId);
+        Assert.Equal(RunStatus.Failed, loaded.Status);
+        Assert.Equal("Line 3: bad amount", loaded.FailureReason);
+        Assert.NotNull(loaded.CompletedUtc);
+    }
+
+    [Fact]
+    public async Task Save_PendingRun_StoresStatusAsText()
+    {
+        var run = NewRun();
+        run.Status = RunStatus.Pending;
+
+        await using var actContext = CreateDbContext();
+        actContext.Runs.Add(run);
+        await actContext.SaveChangesAsync();
+        var runId = run.Id;
+
+        await using var assertContext = CreateDbContext();
+        var rawStatus = await assertContext.Database
+            .SqlQuery<string>($"SELECT Status AS Value FROM Runs WHERE Id = {runId}")
+            .SingleAsync();
+        Assert.Equal("Pending", rawStatus);
+    }
+
+    [Fact]
+    public async Task Delete_RunThatHasInput_IsRejected()
+    {
+        var run = NewRun();
+
+        await using var actContext = CreateDbContext();
+        actContext.RunInputs.Add(new RunInput { Run = run, BankCsv = "b", LedgerCsv = "l" });
+        await actContext.SaveChangesAsync();
+        var runId = run.Id;
+
+        await using var deleteContext = CreateDbContext();
+        var toDelete = await deleteContext.Runs.SingleAsync(r => r.Id == runId);
+        deleteContext.Runs.Remove(toDelete);
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => deleteContext.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Save_InputForMissingRun_IsRejected()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.RunInputs.Add(new RunInput { RunId = 9999, BankCsv = "b", LedgerCsv = "l" });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
     }
 }

@@ -12,7 +12,7 @@
 {
     <p>Loading...</p>
 }
-else if (run is null || matches is null)
+else if (run is null)
 {
     <p>Run not found.</p>
     <a href="runs">Back to runs</a>
@@ -22,107 +22,121 @@ else
     <h2>Run #@run.Id</h2>
     <p>Created @run.CreatedUtc.ToString("yyyy-MM-dd HH:mm") UTC</p>
     <p>Bank file: @run.BankFileName | Ledger file: @run.LedgerFileName</p>
+    <p>Status: @run.Status</p>
 
-    <p>
-        @matches.Count(m => m.Kind == MatchKind.ExactAmountAndDate) exact,
-        @matches.Count(m => m.Kind == MatchKind.FuzzyDescription) fuzzy,
-        @matches.Count(m => m.Kind == MatchKind.PossibleDuplicate) possible duplicates
-    </p>
-
-    <label>
-        Filter
-        <select @bind="kindFilter">
-            <option value="">All</option>
-            <option value="@MatchKind.ExactAmountAndDate">Exact Match</option>
-            <option value="@MatchKind.FuzzyDescription">Fuzzy Match</option>
-            <option value="@MatchKind.PossibleDuplicate">Possible Duplicate</option>
-        </select>
-    </label>
-
-    @if (error is not null)
+    @if (run.Status == RunStatus.Pending)
     {
-        <p>@error</p>
+        <p>This run is waiting to be processed.</p>
+        <button @onclick="LoadAsync">Refresh</button>
     }
+    else if (run.Status == RunStatus.Failed)
+    {
+        <p>This run failed: @run.FailureReason</p>
+    }
+    else if (matches is not null)
+    {
+        <p>
+            @matches.Count(m => m.Kind == MatchKind.ExactAmountAndDate) exact,
+            @matches.Count(m => m.Kind == MatchKind.FuzzyDescription) fuzzy,
+            @matches.Count(m => m.Kind == MatchKind.PossibleDuplicate) possible duplicates
+        </p>
 
-    <table>
-        <tr>
-            <th>Kind</th>
-            <th>Left</th>
-            <th>Right</th>
-            <th>Amount</th>
-            <th>Confidence</th>
-            <th>Review</th>
-        </tr>
-        @foreach (var m in matches.Where(x => kindFilter == null || x.Kind == kindFilter))
+        <label>
+            Filter
+            <select @bind="kindFilter">
+                <option value="">All</option>
+                <option value="@MatchKind.ExactAmountAndDate">Exact Match</option>
+                <option value="@MatchKind.FuzzyDescription">Fuzzy Match</option>
+                <option value="@MatchKind.PossibleDuplicate">Possible Duplicate</option>
+            </select>
+        </label>
+
+        @if (error is not null)
         {
-            <tr>
-                <td>@m.Kind</td>
-                <td>@m.LeftTransaction?.Date.ToString("yyyy-MM-dd") @m.LeftTransaction?.Description</td>
-                <td>@m.RightTransaction?.Date.ToString("yyyy-MM-dd") @m.RightTransaction?.Description</td>
-                <td>@(m.LeftTransaction is null ? "" : Money.Format(m.LeftTransaction.Amount))</td>
-                <td>@m.Confidence.ToString("0.00")</td>
-                <td>
-                    @if (m.Decision is null)
-                    {
-                        <button @onclick="() => ReviewAsync(m, ReviewOutcome.Approved)">Approve</button>
-                        <button @onclick="() => ReviewAsync(m, ReviewOutcome.Rejected)">Reject</button>
-                    }
-                    else
-                    {
-                        <span>@m.Decision.Outcome</span>
-                    }
-                </td>
-            </tr>
+            <p>@error</p>
         }
-    </table>
 
-    <h3>Unmatched bank rows</h3>
-    @if (unmatchedBank is null || unmatchedBank.Count == 0)
-    {
-        <p>None</p>
-    }
-    else
-    {
         <table>
             <tr>
-                <th>Date</th>
+                <th>Kind</th>
+                <th>Left</th>
+                <th>Right</th>
                 <th>Amount</th>
-                <th>Description</th>
+                <th>Confidence</th>
+                <th>Review</th>
             </tr>
-            @foreach (var t in unmatchedBank)
+            @foreach (var m in matches.Where(x => kindFilter == null || x.Kind == kindFilter))
             {
                 <tr>
-                    <td>@t.Date.ToString("yyyy-MM-dd")</td>
-                    <td>@Money.Format(t.Amount)</td>
-                    <td>@t.Description</td>
+                    <td>@m.Kind</td>
+                    <td>@m.LeftTransaction?.Date.ToString("yyyy-MM-dd") @m.LeftTransaction?.Description</td>
+                    <td>@m.RightTransaction?.Date.ToString("yyyy-MM-dd") @m.RightTransaction?.Description</td>
+                    <td>@(m.LeftTransaction is null ? "" : Money.Format(m.LeftTransaction.Amount))</td>
+                    <td>@m.Confidence.ToString("0.00")</td>
+                    <td>
+                        @if (m.Decision is null)
+                        {
+                            <button @onclick="() => ReviewAsync(m, ReviewOutcome.Approved)">Approve</button>
+                            <button @onclick="() => ReviewAsync(m, ReviewOutcome.Rejected)">Reject</button>
+                        }
+                        else
+                        {
+                            <span>@m.Decision.Outcome</span>
+                        }
+                    </td>
                 </tr>
             }
         </table>
+
+        <h3>Unmatched bank rows</h3>
+        @if (unmatchedBank is null || unmatchedBank.Count == 0)
+        {
+            <p>None</p>
+        }
+        else
+        {
+            <table>
+                <tr>
+                    <th>Date</th>
+                    <th>Amount</th>
+                    <th>Description</th>
+                </tr>
+                @foreach (var t in unmatchedBank)
+                {
+                    <tr>
+                        <td>@t.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@Money.Format(t.Amount)</td>
+                        <td>@t.Description</td>
+                    </tr>
+                }
+            </table>
+        }
+
+        <h3>Unmatched ledger rows</h3>
+        @if (unmatchedLedger is null || unmatchedLedger.Count == 0)
+        {
+            <p>None</p>
+        }
+        else
+        {
+            <table>
+                <tr>
+                    <th>Date</th>
+                    <th>Amount</th>
+                    <th>Description</th>
+                </tr>
+                @foreach (var t in unmatchedLedger)
+                {
+                    <tr>
+                        <td>@t.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@Money.Format(t.Amount)</td>
+                        <td>@t.Description</td>
+                    </tr>
+                }
+            </table>
+        }
     }
 
-    <h3>Unmatched ledger rows</h3>
-    @if (unmatchedLedger is null || unmatchedLedger.Count == 0)
-    {
-        <p>None</p>
-    }
-    else
-    {
-        <table>
-            <tr>
-                <th>Date</th>
-                <th>Amount</th>
-                <th>Description</th>
-            </tr>
-            @foreach (var t in unmatchedLedger)
-            {
-                <tr>
-                    <td>@t.Date.ToString("yyyy-MM-dd")</td>
-                    <td>@Money.Format(t.Amount)</td>
-                    <td>@t.Description</td>
-                </tr>
-            }
-        </table>
-    }
     <a href="runs">Back to runs</a>
 }
 
@@ -163,10 +177,19 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        matches = null;
+        unmatchedBank = null;
+        unmatchedLedger = null;
+
         await using var db = await DbFactory.CreateDbContextAsync();
         run = await db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == Id);
 
-        if (run != null)
+        if (run != null && run.Status == RunStatus.Complete)
         {
             matches = await db.Matches.AsNoTracking()
             .Include(m => m.LeftTransaction)

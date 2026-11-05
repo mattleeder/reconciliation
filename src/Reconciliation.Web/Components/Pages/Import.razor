@@ -3,33 +3,27 @@
 @using Microsoft.EntityFrameworkCore
 @using Reconciliation.Domain.Entities
 @using Reconciliation.Domain.Import
-@using Reconciliation.Domain.Matching
 @using Reconciliation.Data
 @inject IDbContextFactory<ReconciliationDbContext> DbFactory
-
 <PageTitle>Import</PageTitle>
-
 <div>
     <label>
         Bank CSV
         <InputFile OnChange="OnBankSelected" />
     </label>
 </div>
-
 <div>
     <label>
         Ledger CSV
         <InputFile OnChange="OnLedgerSelected" />
     </label>
 </div>
-
 <button disabled="@(bankFile is null || ledgerFile is null)" @onclick="OnImportClicked">Import</button>
-<button disabled="@(isSaving || bankResult is null || ledgerResult is null || bankResult.Errors.Count > 0 || ledgerResult.Errors.Count > 0)" @onclick="OnReconciliateClicked">Reconciliate</button>
+<button disabled="@(isSaving || bankResult is null || ledgerResult is null || bankResult.Errors.Count > 0 || ledgerResult.Errors.Count > 0)" @onclick="OnReconcileClicked">Reconcile</button>
 @if (bankResult is not null)
 {
     <h3>Bank</h3>
     <p>Read @bankResult.Transactions.Count rows</p>
-
     if (bankResult.Errors.Count > 0)
     {
         <table>
@@ -47,12 +41,10 @@
         </table>
     }
 }
-
 @if (ledgerResult is not null)
 {
     <h3>Ledger</h3>
     <p>Read @ledgerResult.Transactions.Count rows</p>
-
     if (ledgerResult.Errors.Count > 0)
     {
         <table>
@@ -70,17 +62,14 @@
         </table>
     }
 }
-
 @if (readError is not null)
 {
     <p>@readError</p>
 }
-
 @if (summary is not null)
 {
     <p>@summary</p>
 }
-
 @code
 {
     IBrowserFile? bankFile;
@@ -90,8 +79,9 @@
     string? readError;
     string? summary;
     bool isSaving;
+    string? bankText;
+    string? ledgerText;
     private const long MaxFileSizeBytes = 1024 * 1024;
-
     private void OnBankSelected(InputFileChangeEventArgs e)
     {
         bankFile = e.File;
@@ -99,8 +89,9 @@
         bankResult = null;
         ledgerResult = null;
         summary = null;
+        bankText = null;
+        ledgerText = null;
     }
-
     private void OnLedgerSelected(InputFileChangeEventArgs e)
     {
         ledgerFile = e.File;
@@ -108,52 +99,50 @@
         bankResult = null;
         ledgerResult = null;
         summary = null;
+        bankText = null;
+        ledgerText = null;
     }
-
     private static async Task<string> ReadTextAsync(IBrowserFile file)
     {
         using var stream = file.OpenReadStream(MaxFileSizeBytes);
         using var reader = new StreamReader(stream);
         return await reader.ReadToEndAsync();
     }
-
     private async Task OnImportClicked()
     {
         readError = null;
         bankResult = null;
         ledgerResult = null;
         summary = null;
-
+        bankText = null;
+        ledgerText = null;
         if (bankFile == null || ledgerFile == null)
         {
             return;
         }
-
         try
         {
-            var bankText   = await ReadTextAsync(bankFile);
-            var ledgerText = await ReadTextAsync(ledgerFile);
-            bankResult   = TransactionCsvParser.Parse(bankText, TransactionSource.Bank);
+            bankText   = await ReadTextAsync(bankFile);
+            ledgerText = await ReadTextAsync(ledgerFile);
             ledgerResult = TransactionCsvParser.Parse(ledgerText, TransactionSource.Ledger);
+            bankResult   = TransactionCsvParser.Parse(bankText, TransactionSource.Bank);
         }
         catch (IOException)
         {
+            bankText = null;
+            ledgerText = null;
             readError = "A file is larger than 1 MB.";
         }
     }
-
-    private async Task OnReconciliateClicked()
+    private async Task OnReconcileClicked()
     {
-
-        if (bankFile == null || ledgerFile == null || bankResult == null || ledgerResult == null)
+        if (bankFile == null || ledgerFile == null || bankResult == null || ledgerResult == null || bankText == null || ledgerText == null)
         {
             return;
         }
-
         isSaving = true;
         summary = null;
         readError = null;
-
         try
         {
             var reconciliationRun = new ReconciliationRun
@@ -161,36 +150,25 @@
                 CreatedUtc = DateTime.UtcNow,
                 BankFileName = bankFile.Name,
                 LedgerFileName = ledgerFile.Name,
+                Status = RunStatus.Pending,
             };
-
-            foreach (var tx in bankResult.Transactions)
+            var runInput = new RunInput
             {
-                tx.Run = reconciliationRun;
-            }
-
-            foreach (var tx in ledgerResult.Transactions)
-            {
-                tx.Run = reconciliationRun;
-            }
-
-            var result = MatchingEngine.Run(bankResult.Transactions, ledgerResult.Transactions);
-
+                BankCsv = bankText,
+                LedgerCsv = ledgerText,
+                Run = reconciliationRun,
+            };
             await using var db = await DbFactory.CreateDbContextAsync();
-
-
-            db.Transactions.AddRange(bankResult.Transactions);
-            db.Transactions.AddRange(ledgerResult.Transactions);
-            db.Matches.AddRange(result.Matches);
+            db.Runs.Add(reconciliationRun);
+            db.RunInputs.Add(runInput);
             await db.SaveChangesAsync();
 
-            var numberOfExactMatches = result.Matches.Count(m => m.Kind == MatchKind.ExactAmountAndDate);
-            var numberOfFuzzyMatches = result.Matches.Count(m => m.Kind == MatchKind.FuzzyDescription);
-            var numberOfDuplicateMatches = result.Matches.Count(m => m.Kind == MatchKind.PossibleDuplicate);
-
-            summary = $"Run #{reconciliationRun.Id} saved, {numberOfExactMatches} exact, {numberOfFuzzyMatches} fuzzy, {numberOfDuplicateMatches} possible duplicates, {result.UnmatchedBank.Count} unmatched bank rows, {result.UnmatchedLedger.Count} unmatched ledger rows.";
-
+            summary = $"Run #{reconciliationRun.Id} saved and waiting to be processed.";
             bankResult = null;
             ledgerResult = null;
+            bankText = null;
+            ledgerText = null;
+
         }
         catch (DbUpdateException)
         {
@@ -200,7 +178,5 @@
         {
             isSaving = false;
         }
-
-
     }
 }

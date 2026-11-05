@@ -9,6 +9,7 @@ public class ReconciliationDbContext(DbContextOptions<ReconciliationDbContext> o
     public DbSet<Match> Matches { get; set; } = null!;
     public DbSet<ReviewDecision> ReviewDecisions { get; set; } = null!;
     public DbSet<ReconciliationRun> Runs { get; set; } = null!;
+    public DbSet<RunInput> RunInputs { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
