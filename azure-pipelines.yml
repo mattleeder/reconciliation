@@ -86,8 +86,40 @@ stages:
     dependsOn: Build
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
     jobs:
+      - job: Migrate
+        displayName: Apply migrations
+        steps:
+          - download: current
+            artifact: drop
+          - task: AzureCLI@2
+            displayName: Apply migration script
+            inputs:
+              azureSubscription: azure-reconciliation
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                server=sql-recon-mattl-swedencentral
+                rule=ci-$(Build.BuildId)
+                ip=$(curl -fsS https://api.ipify.org)
+                az sql server firewall-rule create --resource-group rg-reconciliation --server "$server" --name "$rule" --start-ip-address "$ip" --end-ip-address "$ip" --output none
+                trap 'az sql server firewall-rule delete --resource-group rg-reconciliation --server "$server" --name "$rule" --yes' EXIT
+                curl -fsSL -o sqlcmd.tar.bz2 https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
+                tar -xjf sqlcmd.tar.bz2 sqlcmd
+                for attempt in 1 2 3 4 5; do
+                  if ./sqlcmd -S "$server.database.windows.net" -d Reconciliation --authentication-method ActiveDirectoryDefault -i "$(Pipeline.Workspace)/drop/migrate.sql" -b; then
+                    echo "Migrations applied"
+                    exit 0
+                  fi
+                  echo "Attempt $attempt failed, retrying in 30s"
+                  sleep 30
+                done
+                echo "Migration failed"
+                exit 1
+
       - job: DeployWebApp
         displayName: Deploy Web App
+        dependsOn: Migrate
         steps:
           - download: current
             artifact: drop
@@ -98,7 +130,7 @@ stages:
               appType: webAppLinux
               appName: app-recon-mattl
               package: $(Pipeline.Workspace)/drop/web.zip
-              
+
       - job: DeployFunctionApp
         displayName: Deploy Function App
         steps:
