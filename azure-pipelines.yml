@@ -1,0 +1,25 @@
+trigger:
+  branches:
+    include:
+      - master
+  paths:
+    include:
+      - src/
+      - tests/
+      - global.json
+      - dotnet-tools.json
+      - azure-pipelines.yml
+
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: UseDotNet@2
+    inputs:
+      useGlobalJson: true
+  - script: dotnet build tests/Reconciliation.Tests
+    displayName: Build tests
+  - script: dotnet build src/Reconciliation.Worker
+    displayName: Build worker
