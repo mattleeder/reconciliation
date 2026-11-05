@@ -15,11 +15,30 @@ pr: none
 pool:
   vmImage: ubuntu-latest
 
-steps:
-  - task: UseDotNet@2
-    inputs:
-      useGlobalJson: true
-  - script: dotnet build tests/Reconciliation.Tests
-    displayName: Build tests
-  - script: dotnet build src/Reconciliation.Worker
-    displayName: Build worker
+resources:
+  containers:
+    - container: sql
+      image: mcr.microsoft.com/mssql/server:2022-latest
+      env:
+        ACCEPT_EULA: "Y"
+        MSSQL_SA_PASSWORD: $(SqlPassword)
+      ports: 
+        - "1433:1433"
+        
+
+jobs:
+  - job: BuildAndTest
+    services:
+      sql: sql
+    steps:
+      - task: UseDotNet@2
+        inputs:
+          useGlobalJson: true
+      - script: dotnet build tests/Reconciliation.Tests
+        displayName: Build tests
+      - script: dotnet build src/Reconciliation.Worker
+        displayName: Build worker
+      - script: dotnet test tests/Reconciliation.Tests --no-build
+        displayName: Run tests
+        env:
+          RECONCILIATION_CONNECTION: Server=localhost,1433;Database=Reconciliation;User ID=sa;Password=$(SqlPassword);TrustServerCertificate=True
