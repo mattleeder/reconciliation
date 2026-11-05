@@ -12,7 +12,18 @@ if (string.IsNullOrEmpty(sqlConnectionString))
     throw new InvalidOperationException("Connection string 'ConnectionStrings__Reconciliation' not found.");
 }
 
-builder.Services.AddDbContextFactory<ReconciliationDbContext>(options => options.UseSqlServer(sqlConnectionString));
+var options = new DbContextOptionsBuilder();
+
+builder.Services.AddDbContextFactory<ReconciliationDbContext>(options => {
+    options.UseSqlServer(
+        sqlConnectionString,
+        sql => sql.EnableRetryOnFailure(
+            maxRetryCount: 10,
+            maxRetryDelay: TimeSpan.FromSeconds(15),
+            errorNumbersToAdd: null
+        ));
+    }
+);
 
 builder.Services.AddScoped<RunProcessor>();
 
