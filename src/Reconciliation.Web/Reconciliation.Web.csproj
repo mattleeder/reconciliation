@@ -5,6 +5,10 @@
     <ProjectReference Include="..\Reconciliation.Domain\Reconciliation.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Azure.Storage.Queues" Version="12.28.1" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>

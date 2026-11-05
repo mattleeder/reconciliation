@@ -1,10 +1,10 @@
 @page "/import"
 @rendermode InteractiveServer
 @using Microsoft.EntityFrameworkCore
+@using Reconciliation.Data.Processing
 @using Reconciliation.Domain.Entities
 @using Reconciliation.Domain.Import
-@using Reconciliation.Data
-@inject IDbContextFactory<ReconciliationDbContext> DbFactory
+@inject RunSubmitter runSubmitter
 <PageTitle>Import</PageTitle>
 <div>
     <label>
@@ -65,6 +65,10 @@
 @if (readError is not null)
 {
     <p>@readError</p>
+}
+@if (isSaving)
+{
+    <p>Saving...</p>
 }
 @if (summary is not null)
 {
@@ -145,25 +149,17 @@
         readError = null;
         try
         {
-            var reconciliationRun = new ReconciliationRun
-            {
-                CreatedUtc = DateTime.UtcNow,
-                BankFileName = bankFile.Name,
-                LedgerFileName = ledgerFile.Name,
-                Status = RunStatus.Pending,
-            };
-            var runInput = new RunInput
-            {
-                BankCsv = bankText,
-                LedgerCsv = ledgerText,
-                Run = reconciliationRun,
-            };
-            await using var db = await DbFactory.CreateDbContextAsync();
-            db.Runs.Add(reconciliationRun);
-            db.RunInputs.Add(runInput);
-            await db.SaveChangesAsync();
+            var submitResult = await runSubmitter.SubmitAsync(bankFile.Name, bankText, ledgerFile.Name, ledgerText);
 
-            summary = $"Run #{reconciliationRun.Id} saved and waiting to be processed.";
+            if (submitResult.Queued)
+            {
+                summary = $"Run #{submitResult.RunId} saved and queued for processing.";
+            }
+            else
+            {
+                summary = $"Run #{submitResult.RunId} was saved but could not be queued. See its details.";
+            }
+
             bankResult = null;
             ledgerResult = null;
             bankText = null;

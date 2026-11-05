@@ -1,6 +1,9 @@
+using Azure.Storage.Queues;
 using Microsoft.EntityFrameworkCore;
 using Reconciliation.Data;
+using Reconciliation.Data.Processing;
 using Reconciliation.Web.Components;
+using Reconciliation.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,14 +11,37 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-var connectionString = builder.Configuration.GetConnectionString("Reconciliation");
+var sqlConnectionString = builder.Configuration.GetConnectionString("Reconciliation");
 
-if (string.IsNullOrEmpty(connectionString))
+if (string.IsNullOrEmpty(sqlConnectionString))
 {
     throw new InvalidOperationException("Connection string 'ConnectionStrings:Reconciliation' not found.");
 }
 
-builder.Services.AddDbContextFactory<ReconciliationDbContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddDbContextFactory<ReconciliationDbContext>(options => options.UseSqlServer(sqlConnectionString));
+
+var storageConnectionString = builder.Configuration.GetConnectionString("Storage");
+
+if (string.IsNullOrEmpty(storageConnectionString))
+{
+    throw new InvalidOperationException("Connection string 'ConnectionStrings:Storage' not found.");
+}
+
+var queueClientOptions = new QueueClientOptions
+{
+    MessageEncoding = QueueMessageEncoding.Base64,
+    Retry =
+    {
+        MaxRetries = 1,
+        NetworkTimeout = TimeSpan.FromSeconds(5),
+    },
+};
+
+builder.Services.AddSingleton(_ => new QueueClient(storageConnectionString, RunQueueNames.ReconcileRuns, queueClientOptions));
+
+builder.Services.AddSingleton<IRunQueue, StorageRunQueue>();
+
+builder.Services.AddScoped<RunSubmitter>();
 
 var app = builder.Build();
 
