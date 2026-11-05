@@ -41,6 +41,9 @@
 # Data
 - **RunInpurConfiguration** We set `.HasMaxLength(1024 * 1024)` this is not enforced here but is enforced in the app. The schema just records it.
 
+# Processing
+- **`RunSubmitter`** If the `catch (Exception)` rethrows then the`DbUpdateException` will bubble up to the caller. The page handles `DbUpdateException` and the run remains `Pending`
+
 # Known Limitations
 -**Single Currency (GBP)**used for simplicity to avoid having to deal with parsing various currency forms.
 - **`MatchingEngine.TryScoreFuzzy`** Uses fixed thresholds of Jaccard Scoring >= 0.5 for the scoring threshold and 3 days for the window.
@@ -51,3 +54,4 @@
 - **Row Id** Freshly imported rows all have `Id` 0 while matching. This means the tie-break by Id has no effect on an import, the order of rows decides ties instead.
 - **No delete** Runs cannot be deleted, review decisions cannot be undone and unmatched rows cannot be matched by hand.
 - **No authentication**
+- **Cancellation** On cancellation the run stays `Pending`. Could later be fixed by a timer triggered sweep.
