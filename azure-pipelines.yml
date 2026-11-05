@@ -86,7 +86,8 @@ stages:
     dependsOn: Build
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
     jobs:
-      - job: Deploy
+      - job: DeployWebApp
+        displayName: Deploy Web App
         steps:
           - download: current
             artifact: drop
@@ -97,3 +98,17 @@ stages:
               appType: webAppLinux
               appName: app-recon-mattl
               package: $(Pipeline.Workspace)/drop/web.zip
+              
+      - job: DeployFunctionApp
+        displayName: Deploy Function App
+        steps:
+          - download: current
+            artifact: drop
+          - task: AzureFunctionApp@2
+            displayName: Deploy worker
+            inputs:
+              azureSubscription: azure-reconciliation
+              appType: functionAppLinux
+              isFlexConsumption: true
+              appName: func-recon-mattl
+              package: $(Pipeline.Workspace)/drop/worker.zip
