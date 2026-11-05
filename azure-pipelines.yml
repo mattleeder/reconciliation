@@ -38,6 +38,19 @@ jobs:
         displayName: Build tests
       - script: dotnet build src/Reconciliation.Worker
         displayName: Build worker
+      - script: |
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/localhost/1433) 2>/dev/null; then
+              echo "SQL is accepting connections (attempt $i)"
+              exit 0
+            fi
+            echo "Waiting for SQL ($i/30)..."
+            sleep 2
+          done
+          echo "SQL did not start in time"
+          exit 1
+        displayName: Wait for SQL
+        displayName: Wait for SQL
       - script: dotnet test tests/Reconciliation.Tests --no-build
         displayName: Run tests
         env:
