@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Reconciliation.Data;
 using Reconciliation.Data.Processing;
 using Reconciliation.Domain.Entities;
@@ -39,7 +40,7 @@ public class RunSubmitterTests : IAsyncLifetime
 
     private static Task<RunSubmitResult> SubmitAsync(Func<int, Task> onEnqueue)
     {
-        var submitter = new RunSubmitter(new TestDbContextFactory(), new FakeRunQueue(onEnqueue));
+        var submitter = new RunSubmitter(new TestDbContextFactory(), new FakeRunQueue(onEnqueue), NullLogger<RunSubmitter>.Instance);
         return submitter.SubmitAsync("bank.csv", BankCsv, "ledger.csv", LedgerCsv);
     }
 

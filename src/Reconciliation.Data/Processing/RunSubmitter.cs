@@ -1,10 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Reconciliation.Domain.Entities;
 
 namespace Reconciliation.Data.Processing;
 
 
-public class RunSubmitter(IDbContextFactory<ReconciliationDbContext> dbFactory, IRunQueue runQueue)
+public class RunSubmitter(IDbContextFactory<ReconciliationDbContext> dbFactory, IRunQueue runQueue, ILogger<RunSubmitter> logger)
 {
     public async Task<RunSubmitResult> SubmitAsync(string bankFileName, string bankCsv, string ledgerFileName, string ledgerCsv, CancellationToken cancellationToken = default)
     {
@@ -37,8 +38,9 @@ public class RunSubmitter(IDbContextFactory<ReconciliationDbContext> dbFactory, 
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            logger.LogError(ex, "Could not queue run {RunId} for processing.", run.Id);
             run.Status = RunStatus.Failed;
             run.FailureReason = "Could not queue the run for processing.";
             run.CompletedUtc = DateTime.UtcNow;
