@@ -82,4 +82,34 @@ public class RunProcessor(ReconciliationDbContext dbContext)
 
         return ProcessOutcome.Completed;
     }
+
+    public async Task<ProcessOutcome> MarkFailedAsync(int runId, string failureReason, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(failureReason.Length, MaxFailureReasonLength);
+
+        var run = await dbContext.Runs.FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+
+        if (run == null)
+        {
+            return ProcessOutcome.NotFound;
+        }
+
+        if (run.Status != RunStatus.Pending)
+        {
+            return ProcessOutcome.AlreadyProcessed;
+        }
+
+        await MarkFailed(run, failureReason, cancellationToken);
+        return ProcessOutcome.Failed;
+    }
+
+    public async Task<List<int>> GetStalePendingRunIdsAsync(DateTime createdBeforeUtc, int maxCount, CancellationToken cancellationToken = default)
+    {
+        return await dbContext.Runs
+            .Where(r => r.Status == RunStatus.Pending && r.CreatedUtc < createdBeforeUtc)
+            .OrderBy(r => r.CreatedUtc)
+            .Select(r => r.Id)
+            .Take(maxCount)
+            .ToListAsync(cancellationToken);
+    }
 }

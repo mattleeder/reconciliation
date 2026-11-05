@@ -1,14 +1,23 @@
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Logging;
 using Reconciliation.Data.Processing;
 
 namespace Reconciliation.Worker;
 
-public class ProcessRunFunction(ILogger<ProcessRunFunction> logger)
+public class ProcessRunFunction(RunProcessor processor, ILogger<ProcessRunFunction> logger)
 {
     [Function(nameof(ProcessRunFunction))]
-    public void Run([QueueTrigger(RunQueueNames.ReconcileRuns)] string message)
+    public async Task Run(
+        [QueueTrigger(RunQueueNames.ReconcileRuns)] string message,
+        CancellationToken cancellationToken)
     {
-        logger.LogInformation("Received queue message: {Message}", message);
+        if (!int.TryParse(message, out var runId))
+        {
+            logger.LogWarning("Ignoring queue message that is not a run id: {Message}", message);
+            return;
+        }
+
+        var outcome = await processor.ProcessAsync(runId, cancellationToken);
+
+        logger.LogInformation("Run {RunId} processed: {Outcome}", runId, outcome);
     }
 }
