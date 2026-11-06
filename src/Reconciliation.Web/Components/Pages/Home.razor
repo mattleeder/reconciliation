@@ -5,16 +5,26 @@
 
 <PageTitle>Home</PageTitle>
 
-<h1>Bank Reconciliation</h1>
+<div class="page-header">
+    <h1>Bank Reconciliation</h1>
+    <p>Upload a bank statement and a ledger export, then review the matches the system finds.</p>
+</div>
 
-@if (transactionCount is null)
-{
-    <p>Loading...</p>
-}
-else
-{
-    <p>Transactions in database: @transactionCount</p>
-}
+<div class="stat-grid">
+    <div class="stat">
+        <span class="value">@(transactionCount?.ToString("N0") ?? "…")</span>
+        <span class="label">Transactions imported</span>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Get started</h2>
+    <p>Import two CSV files to create a reconciliation run, then open the run to approve or reject proposed matches.</p>
+    <div class="actions">
+        <a class="btn" href="import">Import files</a>
+        <a class="btn secondary" href="runs">View runs</a>
+    </div>
+</div>
 
 @code
 {

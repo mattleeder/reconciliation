@@ -4,19 +4,26 @@
 @using Reconciliation.Domain.Entities
 @rendermode InteractiveServer
 @inject IDbContextFactory<ReconciliationDbContext> DbFactory
+@inject NavigationManager Nav
 
 <PageTitle>Runs</PageTitle>
 
+<div class="page-header">
+    <h1>Runs</h1>
+    <p>Every reconciliation run, newest first.</p>
+</div>
+
 @if (runs is null)
 {
-    <p>Loading...</p>
+    <p class="empty">Loading...</p>
 }
 else if (runs.Count == 0)
 {
-    <p>No runs yet.</p>
+    <div class="card empty">No runs yet. <a href="import">Import your first files</a>.</div>
 }
 else
 {
+    <div class="card flush">
     <table>
         <tr>
             <th>Run</th>
@@ -28,9 +35,9 @@ else
         </tr>
         @foreach(var run in runs)
         {
-            <tr>
+            <tr class="clickable" @onclick="() => OpenRun(run.Id)">
                 <td><a href="runs/@run.Id">#@run.Id</a></td>
-                <td>@run.Status</td>
+                <td><span class="badge badge-@run.Status.ToString().ToLowerInvariant()">@run.Status</span></td>
                 <td>@run.CreatedUtc.ToString("yyyy-MM-dd HH:mm")</td>
                 <td>@(run.CompletedUtc?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
                 <td>@run.BankFileName</td>
@@ -38,11 +45,14 @@ else
             </tr>
         }
     </table>
+    </div>
 }
 
 @code
 {
     private List<ReconciliationRun>? runs;
+
+    private void OpenRun(int id) => Nav.NavigateTo($"runs/{id}");
 
     protected override async Task OnInitializedAsync()
     {

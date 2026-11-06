@@ -1,14 +1,21 @@
 ﻿@inherits LayoutComponentBase
 
-<nav>
-    <NavLink href="" Match="NavLinkMatch.All">Home</NavLink>
-    <NavLink href="import">Import</NavLink>
-    <NavLink href="runs">Runs</NavLink>
-</nav>
+<header class="site-header">
+    <div class="site-header-inner">
+        <a class="brand" href="">Bank<span>Recon</span></a>
+        <nav>
+            <NavLink href="" Match="NavLinkMatch.All">Home</NavLink>
+            <NavLink href="import">Import</NavLink>
+            <NavLink href="runs">Runs</NavLink>
+        </nav>
+    </div>
+</header>
 
 <main>
     @Body
 </main>
+
+<footer class="site-footer">Bank transaction reconciliation portfolio project</footer>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
