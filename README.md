@@ -8,8 +8,7 @@ A web app that reconciles bank transactions against a ledger: import two CSV fil
 
 ## What it does
 
-<!-- TODO (your words, 4-6 lines): the CSV format, how exact then fuzzy matching works,
-     possible duplicates, the review step (approve/reject), and what the run statuses mean. -->
+A simple bank transaction reconciliation tool. Compares a bank statement against an accounting ledger and matches corresponding entries. Takes 2 CSVs with the format `Date,Amount,Description` and matches transactions based on these. Two transactions with the same Date and Amount make an exact match. Fuzzy matches are made when the amounts are equal, dates are within 3 days of each other and the descriptions share at least half their words (Jaccard similarity score >= 0.5). Possible duplicates are flagged, if multiple rows in the same file have the same date, amount and a Jaccard similarity score of 1.0 then they are flagged as duplicates. The matches are then processed and a review step is used to approve or reject them. An imported run is queued and marked Pending until it is processed, then Complete or Failed.
 
 ## Architecture
 
@@ -38,12 +37,13 @@ An import saves the run and its CSV inputs in one go, marks it **Pending**, then
 
 ## Key decisions
 
-<!-- TODO (5-8 bullets, each with the *why*; examples below are from docs/decisions.md):
-- CSVs stored in SQL, not Blob storage: ...
-- Queue message carries only the run id: ...
-- Idempotent worker: ...
-- EF retry because the free database pauses when idle: ...
-Full list: [docs/decisions.md](docs/decisions.md) -->
+- The exact matching pass runs before the fuzzy so a perfect match can never be stolen by a fuzzy one
+- `decimal` is used for money as Microsoft documentation lists it as appropriate and this avoids having to lead with minor units.
+- CSVs stored as text in SQL not Blob storage as there is a 1MB cap and `SaveChangesAsync` saves the wholerun or nothing.
+- Queue messages only carry the `RunId` so that the database stays as the single source of truth.
+- An idempotent worker is used so that redelivered messages do no harm.
+- Runs that fail after 5 attempts are marked failed.
+- A timer sweep finds pending runs older than 10 minutes and queues them.
 
 ## CI/CD
 
@@ -91,23 +91,41 @@ An Azure DevOps pipeline (`azure-pipelines.yml`) builds, runs the test suite aga
 
 ## Run it locally
 
-> Draft: check these steps on a clean clone before publishing.
-
 Requirements: the .NET SDK from `global.json`, Docker, and Azure Functions Core Tools.
 
-1. Create a `.env` file with `MSSQL_SA_PASSWORD=<YOUR PASSWORD>`
+1. Create a `.env` file in the root folder with `MSSQL_SA_PASSWORD=<YOUR PASSWORD>`. The password must meet SQL Server's password requirements (8+ characters and at least three of: upper case, lower case, digits, symbols). Avoid `;` and `"` as the password goes into a connection string.
 2. Start SQL Server and Azurite: `docker compose up -d`
-3. Restore tools and apply the migrations (set `RECONCILIATION_CONNECTION` to a connection string for the local SQL container first): `dotnet tool restore`, then `dotnet ef database update --project src/Reconciliation.Data`
-4. Give the web app its settings with user secrets: `ConnectionStrings:Reconciliation` (local SQL) and `ConnectionStrings:Storage` (`UseDevelopmentStorage=true`).
-5. Give the worker its settings in `src/Reconciliation.Worker/local.settings.json`: `ConnectionStrings__Reconciliation`, `AzureWebJobsStorage` (`UseDevelopmentStorage=true`) and `FUNCTIONS_WORKER_RUNTIME` (`dotnet-isolated`).
-6. Run the worker from its folder: `dotnet run` in `src/Reconciliation.Worker`.
-7. Run the web app: `dotnet run --project src/Reconciliation.Web`.
+3. Set `RECONCILIATION_CONNECTION` to a connection string for the local SQL container
+   ```powershell
+   $env:RECONCILIATION_CONNECTION = "Server=localhost,1433;Database=Reconciliation;User ID=sa;Password=<YOUR PASSWORD>;TrustServerCertificate=True"
+   ```
+4. In the same terminal window, restore tools and apply the migrations: `dotnet tool restore`, `dotnet restore src/Reconciliation.Data` then `dotnet ef database update --project src/Reconciliation.Data`
+5. Give the web app its settings with user secrets: `ConnectionStrings:Reconciliation`. The local storage connection string is already in `appsettings.Development.json`.
+   ```powershell
+   dotnet user-secrets set "ConnectionStrings:Reconciliation" "Server=localhost,1433;Database=Reconciliation;User ID=sa;Password=<YOUR PASSWORD>;TrustServerCertificate=True" --project src/Reconciliation.Web
+   ```
+6. Create `src/Reconciliation.Worker/local.settings.json` to give the worker its settings (the file is git-ignored so you will have to create it): `ConnectionStrings__Reconciliation`, `AzureWebJobsStorage` (`UseDevelopmentStorage=true`) and `FUNCTIONS_WORKER_RUNTIME` (`dotnet-isolated`). For example:
+   ```json
+   {
+     "IsEncrypted": false,
+     "Values": {
+       "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+       "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+       "ConnectionStrings__Reconciliation": "Server=localhost,1433;Database=Reconciliation;User ID=sa;Password=<YOUR PASSWORD>;TrustServerCertificate=True"
+     }
+   }
+   ```
+7. Run the worker from its folder: `dotnet run` in `src/Reconciliation.Worker`.
+8. In a separate terminal, run the web app: `dotnet run --project src/Reconciliation.Web`.
+9. Open the URL printed in the console (the Now listening on: line), then import `samples/bank.csv` and `samples/ledger.csv`. The run should go from Pending to Complete once the worker picks it up.
+10. To stop, press Ctrl+C in both terminals, then run `docker compose down` to stop the containers. If you want to delete the data use `docker compose down -v`.
 
-Tests: set `RECONCILIATION_CONNECTION` to the local SQL container and run `dotnet test`. The tests always use a separate `Reconciliation_Tests` database, never your development data.
+Tests: while the containers are running, set `RECONCILIATION_CONNECTION` to the local SQL container and run `dotnet test`. The tests always use a separate `Reconciliation_Tests` database, never your development data.
 
 ## Limitations and next steps
 
-<!-- TODO (short and honest). From docs/decisions.md: single currency (GBP), no authentication,
-     no way to delete runs, thousands separators in amounts are not supported. Add anything
-     about the free-tier cold starts, and what you'd change for production
-     (managed identity for storage, a dedicated migration user, ...). -->
+- Single currency (GBP) to avoid dealing with various currency forms.
+- Amount format is plain decimals only, no thousands separators.
+- No authentication.
+- No delete or undo.
+- Greedy fuzzy matching is deterministic but no globally optimal as later bank rows might be a better match for a ledger transaction.
