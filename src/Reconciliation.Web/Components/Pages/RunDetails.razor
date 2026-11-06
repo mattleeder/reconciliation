@@ -4,6 +4,7 @@
 @using Reconciliation.Domain.Entities
 @using Reconciliation.Domain.Matching
 @rendermode InteractiveServer
+@implements IDisposable
 @inject IDbContextFactory<ReconciliationDbContext> DbFactory
 
 <PageTitle>Run Details</PageTitle>
@@ -170,6 +171,7 @@ else
     private string? error;
     private List<Transaction>? unmatchedBank;
     private List<Transaction>? unmatchedLedger;
+    private readonly CancellationTokenSource pollCts = new();
 
     private async Task ReviewAsync(Match match, ReviewOutcome outcome)
     {
@@ -198,6 +200,43 @@ else
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _ = PollWhilePendingAsync();
+        }
+    }
+
+    // A new run is Pending until the worker picks it up (a cold Function App can take a while),
+    // so reload every few seconds until it is no longer Pending. The Refresh button still works.
+    private async Task PollWhilePendingAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+
+        try
+        {
+            while (run?.Status == RunStatus.Pending && await timer.WaitForNextTickAsync(pollCts.Token))
+            {
+                await LoadAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+            // A failed reload (for example the database waking up) just stops the polling.
+        }
+    }
+
+    public void Dispose()
+    {
+        pollCts.Cancel();
+        pollCts.Dispose();
     }
 
     private async Task LoadAsync()

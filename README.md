@@ -4,7 +4,9 @@ A web app that reconciles bank transactions against a ledger: import two CSV fil
 
 **Live demo:** https://app-recon-mattl.azurewebsites.net
 
-> It runs on free Azure tiers, so the first load can take 30 seconds or more while the web app and database wake up. To try it, import `samples/bank.csv` and `samples/ledger.csv`.
+> It runs on free Azure tiers, so the first load can take 30 seconds or more while the web app and database wake up. To try it, open the Import page and click **Try with sample data** (the same files are in `samples/` if you want to upload them yourself).
+
+![Run details page showing exact, fuzzy and possible duplicate matches with Approve and Reject buttons, and the unmatched bank and ledger rows](docs/images/run-details.png)
 
 ## What it does
 

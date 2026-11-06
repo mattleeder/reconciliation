@@ -4,7 +4,10 @@
 @using Reconciliation.Data.Processing
 @using Reconciliation.Domain.Entities
 @using Reconciliation.Domain.Import
+@using Reconciliation.Web.Services
 @inject RunSubmitter runSubmitter
+@inject SampleRunService sampleRunService
+@inject NavigationManager Nav
 <PageTitle>Import</PageTitle>
 
 <div class="page-header">
@@ -12,6 +15,15 @@
     <p>Choose a bank CSV and a ledger CSV (max 1 MB each), check them, then reconcile.</p>
 </div>
 
+<div class="card">
+    <h2>Try it with sample data</h2>
+    <p>Creates a run from the example bank and ledger files, so you can see the results without uploading anything.</p>
+    <div class="actions">
+        <button disabled="@isSaving" @onclick="OnSampleClicked">Try with sample data</button>
+    </div>
+</div>
+
+<h2>Or import your own files</h2>
 <div class="card">
     <label class="field">
         <span class="field-label">Bank CSV</span>
@@ -150,6 +162,30 @@
             readError = "A file is larger than 1 MB.";
         }
     }
+    private async Task OnSampleClicked()
+    {
+        isSaving = true;
+        readError = null;
+        summary = null;
+
+        try
+        {
+            var bankCsv = await SampleFiles.ReadAsync("bank.csv");
+            var ledgerCsv = await SampleFiles.ReadAsync("ledger.csv");
+            var result = await sampleRunService.SubmitAsync(bankCsv, ledgerCsv);
+
+            Nav.NavigateTo($"runs/{result.RunId}");
+        }
+        catch (DbUpdateException)
+        {
+            readError = "Could not save the sample run to the database.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
     private async Task OnReconcileClicked()
     {
         if (bankFile == null || ledgerFile == null || bankResult == null || ledgerResult == null || bankText == null || ledgerText == null)

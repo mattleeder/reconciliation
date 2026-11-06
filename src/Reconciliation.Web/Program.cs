@@ -51,6 +51,7 @@ builder.Services.AddSingleton(_ => new QueueClient(storageConnectionString, RunQ
 builder.Services.AddSingleton<IRunQueue, StorageRunQueue>();
 
 builder.Services.AddScoped<RunSubmitter>();
+builder.Services.AddScoped<SampleRunService>();
 
 var app = builder.Build();
 
